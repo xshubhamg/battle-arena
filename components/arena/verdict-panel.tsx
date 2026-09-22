@@ -17,8 +17,28 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-/** Diverging bar anchored at the centre; fills toward the favoured side. */
-function EdgeBar({
+function signed(value: number): string {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
+}
+
+function SectionHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </span>
+      <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+/**
+ * Diverging bar anchored at the centre. `value` runs -1 (full advantage to the
+ * left/fighter a) to +1 (full advantage to the right/fighter b). The fill always
+ * grows from the centre line toward whichever side is favoured, so direction
+ * and magnitude are both readable.
+ */
+function DivergingBar({
   value,
   className,
 }: {
@@ -26,15 +46,21 @@ function EdgeBar({
   className?: string;
 }) {
   const width = Math.min(1, Math.abs(value)) * 50;
+  const positive = value >= 0;
   return (
-    <div className={cn("relative h-2 overflow-hidden rounded-full bg-muted", className)}>
-      <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-border" />
+    <div
+      className={cn(
+        "relative h-2 w-full overflow-hidden rounded-full bg-muted",
+        className,
+      )}
+    >
+      <span className="absolute left-1/2 top-0 z-10 h-full w-px -translate-x-1/2 bg-border" />
       <span
         className={cn(
           "absolute top-0 h-full rounded-full bg-foreground",
-          value >= 0 ? "left-1/2" : "right-1/2",
+          positive ? "left-1/2" : "right-1/2",
         )}
-        style={{ width: `${width}%` }}
+        style={{ width: width === 0 ? 0 : `${Math.max(width, 1.5)}%` }}
       />
     </div>
   );
@@ -47,26 +73,34 @@ export function VerdictPanel({
   verdict: Verdict;
   names: { a: string; b: string };
 }) {
-  const winnerLabel =
+  const probA = verdict.winner.probabilities.fighter_a ?? 0;
+  const probDraw = verdict.winner.probabilities.draw ?? 0;
+  const probB = verdict.winner.probabilities.fighter_b ?? 0;
+
+  const winnerProb =
+    verdict.winner.side === "a"
+      ? probA
+      : verdict.winner.side === "b"
+        ? probB
+        : probDraw;
+
+  const summary =
     verdict.winner.side === "draw"
-      ? "Draw"
-      : verdict.winner.side === "a"
-        ? "Side A"
-        : "Side B";
+      ? `Jev calls it a draw — ${percent(probDraw)} likelihood.`
+      : `Jev gives ${verdict.winner.name} a ${percent(winnerProb)} chance to win.`;
 
   const probabilityRows = [
-    { key: "fighter_a", label: names.a, value: verdict.winner.probabilities.fighter_a ?? 0 },
-    { key: "draw", label: "Draw", value: verdict.winner.probabilities.draw ?? 0 },
-    { key: "fighter_b", label: names.b, value: verdict.winner.probabilities.fighter_b ?? 0 },
+    { key: "a", label: names.a, value: probA, winner: verdict.winner.side === "a" },
+    { key: "draw", label: "Draw", value: probDraw, winner: verdict.winner.side === "draw" },
+    { key: "b", label: names.b, value: probB, winner: verdict.winner.side === "b" },
   ];
-  const maxProbability = Math.max(0.0001, ...probabilityRows.map((r) => r.value));
 
-  const edgeSide =
+  const favorsName =
     verdict.edge.favors === "a"
       ? names.a
       : verdict.edge.favors === "b"
         ? names.b
-        : "No one";
+        : "Neither";
 
   return (
     <Card className="[corner-shape:squircle]">
@@ -76,7 +110,7 @@ export function VerdictPanel({
             Jev verdict
           </Badge>
           {verdict.coinFlip.isCoinFlip && (
-            <Badge variant="secondary">Coin flip</Badge>
+            <Badge variant="secondary">Too close to call</Badge>
           )}
           {verdict.split && <Badge variant="secondary">Split verdict</Badge>}
         </div>
@@ -84,93 +118,177 @@ export function VerdictPanel({
       </CardHeader>
 
       <CardContent className="flex flex-col gap-6">
+        {/* Winner */}
         <div className="flex flex-col gap-1">
           <span className="text-xs uppercase tracking-wide text-muted-foreground">
-            {winnerLabel} wins
+            {verdict.winner.side === "draw" ? "Result" : "Winner"}
           </span>
           <TextReveal
             as="h2"
             text={verdict.winner.name}
             className="text-3xl font-semibold tracking-tight"
           />
-          <span className="text-sm text-muted-foreground">
-            confidence{" "}
+          <p className="text-sm text-muted-foreground">{summary}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Confidence{" "}
             <AnimatedNumber
               value={verdict.winner.confidence}
               format={percent}
               className="font-mono text-foreground"
-            />
-          </span>
+            />{" "}
+            — how sure Jev is about this outcome.
+          </p>
+          {verdict.split && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              The winner pick and the weighted edge below disagree; read this as
+              a close call.
+            </p>
+          )}
         </div>
 
-        <div className="flex flex-col gap-2">
-          {probabilityRows.map((row) => (
-            <div key={row.key} className="flex items-center gap-3">
-              <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
-                {row.label}
-              </span>
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+        <Separator />
+
+        {/* Win share */}
+        <div className="flex flex-col gap-3">
+          <SectionHeading
+            title="Win share"
+            hint="Jev's probability for each outcome, from 0% to 100%. Longer bar wins."
+          />
+          <div className="flex flex-col gap-2">
+            {probabilityRows.map((row) => (
+              <div key={row.key} className="flex items-center gap-3">
                 <span
-                  className="block h-full rounded-full bg-foreground"
-                  style={{ width: `${(row.value / maxProbability) * 100}%` }}
-                />
-              </span>
-              <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums">
-                {percent(row.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <Separator />
-
-        <div className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <div>
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                Edge
-              </span>
-              <p className="text-sm">
-                {verdict.edge.favors === "even"
-                  ? "Evenly matched"
-                  : `${edgeSide} · ${verdict.edge.label}`}
-              </p>
-            </div>
-            <AnimatedNumber
-              value={verdict.edge.magnitude}
-              format={(n) => n.toFixed(2)}
-              className="text-2xl font-semibold"
-            />
-          </div>
-          <EdgeBar value={verdict.edge.value} />
-          <div className="flex justify-between text-[11px] text-muted-foreground">
-            <span>{names.a}</span>
-            <span>{names.b}</span>
-          </div>
-        </div>
-
-        <Separator />
-
-        <div className="flex flex-col gap-3">
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">
-            Dimensions
-          </span>
-          {verdict.edge.dimensions.map((dimension) => (
-            <div key={dimension.key} className="flex flex-col gap-1">
-              <div className="flex items-center justify-between text-xs">
-                <span>{dimension.label}</span>
-                <span className="text-muted-foreground">
-                  weight {Math.round(dimension.weight * 100)}% · conf{" "}
-                  {dimension.confidence.toFixed(2)}
+                  className={cn(
+                    "w-28 shrink-0 truncate text-xs",
+                    row.winner
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {row.label}
+                </span>
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                  <span
+                    className={cn(
+                      "block h-full rounded-full",
+                      row.winner ? "bg-foreground" : "bg-foreground/25",
+                    )}
+                    style={{ width: `${Math.min(100, row.value * 100)}%` }}
+                  />
+                </span>
+                <span
+                  className={cn(
+                    "w-10 shrink-0 text-right font-mono text-xs tabular-nums",
+                    row.winner ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {percent(row.value)}
                 </span>
               </div>
-              <EdgeBar value={dimension.signed} className="h-1.5" />
-              <div className="flex justify-between text-[11px] text-muted-foreground">
-                <span>{names.a}</span>
-                <span>{names.b}</span>
-              </div>
+            ))}
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Edge */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-4">
+            <SectionHeading
+              title="Edge"
+              hint="Weighted advantage across the six dimensions below."
+            />
+            <div className="shrink-0 text-right">
+              <span className="text-3xl font-semibold tabular-nums">
+                <span className="text-muted-foreground">
+                  {verdict.edge.value >= 0 ? "+" : "−"}
+                </span>
+                <AnimatedNumber
+                  value={Math.abs(verdict.edge.value)}
+                  format={(n) => n.toFixed(2)}
+                />
+              </span>
+              <p className="text-xs text-muted-foreground">
+                {verdict.edge.favors === "even"
+                  ? "Evenly matched"
+                  : `${verdict.edge.label} to ${favorsName}`}
+              </p>
             </div>
-          ))}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex justify-between text-[11px]">
+              <span
+                className={cn(
+                  verdict.edge.favors === "a"
+                    ? "font-medium text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                ← {names.a}
+              </span>
+              <span
+                className={cn(
+                  verdict.edge.favors === "b"
+                    ? "font-medium text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {names.b} →
+              </span>
+            </div>
+            <DivergingBar value={verdict.edge.value} />
+            <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted-foreground/70">
+              <span>−1 total loss</span>
+              <span>0 even</span>
+              <span>+1 total win</span>
+            </div>
+          </div>
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Bands: <span className="text-foreground">coin flip</span> under 0.12
+            · slight under 0.35 · clear under 0.65 · dominant above. Current:{" "}
+            <span className="text-foreground">{verdict.edge.label}</span>.
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Dimensions */}
+        <div className="flex flex-col gap-3">
+          <SectionHeading
+            title="Dimensions"
+            hint="Six Jev scores that feed the edge. Each bar points to whoever was judged stronger on that axis. Weight is how much it counts; confidence is how sure Jev was."
+          />
+
+          <div className="flex justify-between text-[11px] text-muted-foreground">
+            <span>← {names.a}</span>
+            <span>{names.b} →</span>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {verdict.edge.dimensions.map((dimension) => {
+              const even = Math.abs(dimension.signed) < 0.1;
+              const side = dimension.signed > 0 ? names.a : names.b;
+              return (
+                <div key={dimension.key} className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-medium">{dimension.label}</span>
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <span className={even ? "" : "text-foreground"}>
+                        {even ? "Even" : `${side} ${signed(dimension.signed)}`}
+                      </span>
+                      <span className="text-muted-foreground/70">
+                        weight {Math.round(dimension.weight * 100)}% · conf{" "}
+                        {dimension.confidence.toFixed(2)}
+                      </span>
+                    </span>
+                  </div>
+                  <DivergingBar value={dimension.signed} className="h-1.5" />
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <Separator />
@@ -183,8 +301,11 @@ export function VerdictPanel({
               tokens
             </span>
           )}
-          <span className="font-mono">
-            coin-flip noul {percent(verdict.coinFlip.probability)}
+          <span>
+            Too close to call:{" "}
+            <span className="font-mono text-foreground">
+              {percent(verdict.coinFlip.probability)}
+            </span>
           </span>
         </div>
       </CardContent>
