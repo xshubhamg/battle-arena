@@ -1,0 +1,11 @@
+# Never upload local secrets or the local database with a CLI deploy.
+# Use Vercel's environment variables instead. Git-based deploys ignore these
+# automatically.
+.env
+.env.*
+!.env.example
+data
+
+# Local build artifacts
+.next
+node_modules
