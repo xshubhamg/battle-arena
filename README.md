@@ -20,6 +20,8 @@ vibes-only verdicts: just typed, calibrated decisions your code can inspect.
 
 ---
 
+![Battle Arena landing — pick two fighters and let Jev decide](docs/screenshots/hero.png)
+
 ## What it does
 
 1. **Pick two fighters** from a live roster — anime (AniList), comics (SuperHero
@@ -34,6 +36,29 @@ vibes-only verdicts: just typed, calibrated decisions your code can inspect.
 Jev is a *decision* model, not an LLM. It never writes text — the verdict is a
 typed payload the UI renders as bars, meters, and badges. See
 [docs/adr/0005](docs/adr/0005-jev-as-judge.md).
+
+## A verdict, anatomized
+
+Every battle page pairs a compact fighter rail (portraits, names, VS divider)
+with a verdict column built from Jev's answers — no generated prose anywhere:
+
+![A Jev verdict — Killua Zoldyck vs Sasuke Uchiha, with win-share donut, edge gauge, and dimension cards](docs/screenshots/battle.png)
+
+- **Winner hero** — circular win-share chart with the winner's probability at
+  its center, plus Jev's confidence (how peaked the distribution was — not the
+  win chance itself).
+- **Win share** — Jev's probability for each outcome as a segmented bar and
+  per-outcome rows.
+- **Edge** — the signed composite: positive leans toward fighter A, negative
+  toward fighter B. Bands run coin flip (< 0.12) · slight (< 0.35) · clear
+  (< 0.65) · dominant above.
+- **Dimensions** — six metric cards, each with a diverging bar, direction
+  arrow, weight, and confidence meter.
+- **Powerstats head-to-head** — source stat blocks (0–100) as mirrored bars,
+  with the winner of each stat highlighted.
+- **Flags** — `Too close to call` when the matchup is a coin flip, and `Split
+  verdict` when the winner Choice and the weighted edge disagree. Surfaced as
+  badges, never silently reconciled.
 
 ## Features
 
@@ -120,7 +145,9 @@ lib/
   sources/               One CharacterSource seam: AniList · SuperHero · TVMaze+Wikipedia
   judge/                 State, questions, composite edge, Jev client, mock
   db/                    Store seam: SQLite (Bun) + in-memory (Node)
-docs/adr/                Architecture decision records
+docs/
+  adr/                   Architecture decision records
+  screenshots/           README showcase images
 ```
 
 Start with [`AGENTS.md`](AGENTS.md) to work in the repo and
