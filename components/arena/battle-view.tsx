@@ -94,6 +94,7 @@ export function BattleView({
       <VerdictPanel
         verdict={verdict}
         names={{ a: fighterA.name, b: fighterB.name }}
+        fighters={{ a: fighterA, b: fighterB }}
       />
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span>{cached ? "Cached verdict" : "Freshly judged"}</span>
